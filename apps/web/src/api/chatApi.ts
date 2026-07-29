@@ -1,5 +1,24 @@
 import axiosInstance from "./axiosInstance"
 
+export interface ChatStreamEvent {
+    type: "metadata" | "compaction" | "text" | "done" | "error"
+    content?: string
+    conversation_id?: string
+    summary?: string
+    summary_updated_at?: string
+}
+
+export const parseSseChunk = (input: string): { events: ChatStreamEvent[]; remainder: string } => {
+    const lines = input.split("\n")
+    const remainder = lines.pop() || ""
+    const events = lines
+        .map((line) => line.trimEnd())
+        .filter((line) => line.startsWith("data: "))
+        .map((line) => JSON.parse(line.slice(6)) as ChatStreamEvent)
+
+    return { events, remainder }
+}
+
 export const fetchChatHistory = async () => {
     const response = await axiosInstance.get("/chat/history")
     return response.data.history
@@ -15,7 +34,7 @@ export const sendMessageStream = async function* ({
 }: {
     message: string
     conversationId?: string
-}) {
+}): AsyncGenerator<ChatStreamEvent> {
     try {
         const response = await fetch(
             `${axiosInstance.defaults.baseURL || "http://localhost:8000"}/chat`,
@@ -50,22 +69,20 @@ export const sendMessageStream = async function* ({
             if (done) break
 
             buffer += decoder.decode(value, { stream: true })
-            const lines = buffer.split("\n")
+            const parsed = parseSseChunk(buffer)
+            buffer = parsed.remainder
 
-            buffer = lines.pop() || ""
-
-            for (const line of lines) {
-                if (line.startsWith("data: ")) {
-                    const jsonStr = line.slice(6)
-                    const event = JSON.parse(jsonStr)
-                    yield event
+            for (const event of parsed.events) {
+                yield event
+                if (event.type === "done") {
+                    await reader.cancel()
+                    return
                 }
             }
         }
 
         if (buffer.startsWith("data: ")) {
-            const jsonStr = buffer.slice(6)
-            const event = JSON.parse(jsonStr)
+            const event = JSON.parse(buffer.slice(6)) as ChatStreamEvent
             yield event
         }
     } catch (error) {
@@ -73,7 +90,7 @@ export const sendMessageStream = async function* ({
         yield {
             type: "error",
             content: error instanceof Error ? error.message : "Unknown error",
-        }
+        } satisfies ChatStreamEvent
     }
 }
 

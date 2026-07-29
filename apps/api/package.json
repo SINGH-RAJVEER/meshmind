@@ -9,7 +9,8 @@
         "lint": "biome lint --write .",
         "format": "biome format --write .",
         "type-check": "tsc --noEmit",
-        "clean": "rm -rf dist"
+        "clean": "rm -rf dist",
+        "embeddings:backfill": "bun --env-file=../../.env src/scripts/backfillEmbeddings.ts"
     },
     "dependencies": {
         "@better-auth/drizzle-adapter": "1.5.3",

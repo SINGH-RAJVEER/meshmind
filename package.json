@@ -13,10 +13,12 @@
         "lint": "nx run-many -t lint",
         "format": "nx run-many -t format",
         "type-check": "nx run-many -t type-check",
+        "test": "bun test",
         "clean": "nx run-many -t clean && rm -rf node_modules"
     },
     "devDependencies": {
         "@biomejs/biome": "^2.4.4",
+        "@types/bun": "^1.3.14",
         "@vitejs/plugin-react-swc": "^4.2.3",
         "babel-plugin-react-compiler": "^1.0.0",
         "concurrently": "^8.2.2",

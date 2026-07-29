@@ -1,20 +1,35 @@
-import { ChevronLeft, ChevronRight, Loader, LogOut, Plus, Send, Trash2 } from "lucide-solid"
+import {
+    Bot,
+    Loader,
+    LogOut,
+    MessageSquareText,
+    PanelLeftClose,
+    PanelLeftOpen,
+    Plus,
+    Send,
+    Trash2,
+} from "lucide-solid"
 import { createEffect, createSignal, For, onMount, Show } from "solid-js"
 import { useDeleteChat, useFetchChatHistory, useSendMessageStream } from "../hooks/useChat"
 import { useLogout } from "../hooks/useLogout"
+import { useAuthStore } from "../store/authStore"
 import { useChatStore } from "../store/chatStore"
 import MarkdownContent from "./MarkdownContent"
 import ThemeToggle from "./ThemeToggle"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
+import { Separator } from "./ui/separator"
 import { Sidebar } from "./ui/sidebar"
 
 function Dashboard() {
     const { chatHistory, selectedConversation, setSelectedConversation, loading } = useChatStore()
+    const { user } = useAuthStore()
 
     let chatEndRef: HTMLDivElement | undefined
     const [prompt, setPrompt] = createSignal("")
-    const [sidebarCollapsed, setSidebarCollapsed] = createSignal(false)
+    const [sidebarCollapsed, setSidebarCollapsed] = createSignal(
+        typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches
+    )
     const [streamingMessage, setStreamingMessage] = createSignal("")
 
     const { mutate: sendMessage, isPending: isMutationPending } = useSendMessageStream()
@@ -48,6 +63,8 @@ function Dashboard() {
                     setStreamingMessage((prev) => prev + chunk)
                 },
             })
+            setStreamingMessage("")
+            await refetchChatHistory()
         } catch {
             setStreamingMessage("")
         }
@@ -64,203 +81,278 @@ function Dashboard() {
         deleteChat(chatId)
     }
 
+    const conversationTitle = () =>
+        selectedConversation()?.messages[0]?.user_message || "New conversation"
+
+    const userInitials = () => user()?.username.slice(0, 2).toUpperCase() || "MM"
+
     return (
-        <div className="flex h-screen bg-background text-foreground">
-            {/* Sidebar */}
+        <div className="flex h-[100dvh] overflow-hidden bg-background text-foreground">
             <Sidebar
                 collapsed={sidebarCollapsed()}
                 onCollapse={() => setSidebarCollapsed((prev) => !prev)}
             >
-                <div className="flex flex-col h-full">
-                    <div className="flex-1 overflow-y-auto">
-                        <For each={chatHistory()}>
-                            {(chat) => (
-                                <div
-                                    className={`p-3 hover:bg-accent cursor-pointer transition-colors duration-150 rounded-md mx-2 my-1 group ${
-                                        selectedConversation()?.id === chat.id ? "bg-accent" : ""
-                                    }`}
+                <div className="flex h-full flex-col">
+                    <div className="flex h-16 shrink-0 items-center border-b border-sidebar-border px-3">
+                        <Show
+                            when={!sidebarCollapsed()}
+                            fallback={
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="mx-auto text-sidebar-foreground"
+                                    onClick={() => setSidebarCollapsed(false)}
+                                    aria-label="Expand sidebar"
                                 >
-                                    <div className="flex items-center justify-between gap-2">
-                                        <button
-                                            type="button"
-                                            className="truncate text-sm flex-1 text-left"
-                                            onClick={() => setSelectedConversation(chat)}
-                                        >
-                                            {chat?.messages[0]?.user_message?.slice(0, 20) ||
-                                                "New Chat"}
-                                        </button>
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                                            onClick={(e) => handleDeleteChat(e, chat.id)}
-                                        >
-                                            <Trash2 className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                </div>
-                            )}
-                        </For>
+                                    <PanelLeftOpen />
+                                </Button>
+                            }
+                        >
+                            <div className="flex w-full items-center gap-2.5">
+                                <span className="font-wordmark flex-1 text-xl font-semibold tracking-[-0.04em]">
+                                    MeshMind
+                                </span>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-sidebar-foreground"
+                                    onClick={() => setSidebarCollapsed(true)}
+                                    aria-label="Collapse sidebar"
+                                >
+                                    <PanelLeftClose />
+                                </Button>
+                            </div>
+                        </Show>
                     </div>
-                    <Show when={!sidebarCollapsed()}>
+
+                    <div className="p-3">
                         <Button
                             onClick={startNewConversation}
-                            className="m-3 w-auto flex items-center gap-2"
-                            size="sm"
+                            variant={sidebarCollapsed() ? "ghost" : "default"}
+                            size={sidebarCollapsed() ? "icon" : "default"}
+                            className={sidebarCollapsed() ? "w-full" : "w-full justify-start"}
+                            aria-label="New chat"
                         >
-                            <Plus className="h-4 w-4" />
-                            New Chat
+                            <Plus />
+                            <Show when={!sidebarCollapsed()}>New chat</Show>
                         </Button>
+                    </div>
+
+                    <Show when={!sidebarCollapsed()}>
+                        <Separator />
+                        <div className="flex min-h-0 flex-1 flex-col px-3 py-4">
+                            <div className="mb-2 flex items-center justify-between px-2">
+                                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                    Recent
+                                </p>
+                                <span className="text-xs tabular-nums text-muted-foreground">
+                                    {chatHistory().length}
+                                </span>
+                            </div>
+                            <div className="space-y-1 overflow-y-auto">
+                                <For
+                                    each={chatHistory()}
+                                    fallback={
+                                        <p className="px-2 py-6 text-center text-sm text-muted-foreground">
+                                            Your conversations will appear here.
+                                        </p>
+                                    }
+                                >
+                                    {(chat) => (
+                                        <div className="group relative">
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                className={`h-auto min-h-9 w-full items-start justify-start overflow-hidden py-2 pr-9 font-normal ${
+                                                    selectedConversation()?.id === chat.id
+                                                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                                                        : ""
+                                                }`}
+                                                onClick={() => setSelectedConversation(chat)}
+                                            >
+                                                <MessageSquareText className="mt-0.5 shrink-0" />
+                                                <span className="min-w-0 flex-1 text-left">
+                                                    <span className="block truncate">
+                                                        {chat.messages[0]?.user_message ||
+                                                            "New chat"}
+                                                    </span>
+                                                    <Show when={chat.summary}>
+                                                        {(summary) => (
+                                                            <span className="mt-0.5 line-clamp-2 whitespace-normal text-left text-xs leading-4 text-muted-foreground">
+                                                                {summary()}
+                                                            </span>
+                                                        )}
+                                                    </Show>
+                                                </span>
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive focus:opacity-100 group-hover:opacity-100"
+                                                onClick={(e) => handleDeleteChat(e, chat.id)}
+                                                aria-label="Delete conversation"
+                                            >
+                                                <Trash2 />
+                                            </Button>
+                                        </div>
+                                    )}
+                                </For>
+                            </div>
+                        </div>
                     </Show>
+
+                    <div className="mt-auto border-t border-sidebar-border p-3">
+                        <Show
+                            when={!sidebarCollapsed()}
+                            fallback={
+                                <Button
+                                    onClick={() => logout()}
+                                    variant="ghost"
+                                    size="icon"
+                                    className="w-full text-muted-foreground"
+                                    aria-label="Log out"
+                                >
+                                    <LogOut />
+                                </Button>
+                            }
+                        >
+                            <div className="flex items-center gap-2">
+                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sidebar-accent text-xs font-semibold text-sidebar-accent-foreground">
+                                    {userInitials()}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <p className="truncate text-sm font-medium">
+                                        {user()?.username}
+                                    </p>
+                                    <p className="truncate text-xs text-muted-foreground">
+                                        {user()?.email}
+                                    </p>
+                                </div>
+                                <Button
+                                    onClick={() => logout()}
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 shrink-0 text-muted-foreground"
+                                    aria-label="Log out"
+                                >
+                                    <LogOut />
+                                </Button>
+                            </div>
+                        </Show>
+                    </div>
                 </div>
             </Sidebar>
 
-            {/* Main Chat Area */}
-            <div className="flex flex-1 flex-col h-screen">
-                {/* Header */}
-                <header className="bg-card border-b border-border shadow-sm flex justify-between items-center px-6 py-4 flex-shrink-0">
-                    <div className="flex items-center">
-                        <button
-                            type="button"
-                            onClick={() => setSidebarCollapsed((prev) => !prev)}
-                            className="group relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-md border border-dashed border-border bg-muted/40 text-xs font-medium text-muted-foreground transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                            aria-label={sidebarCollapsed() ? "Expand sidebar" : "Collapse sidebar"}
-                        >
-                            <span className="transition-transform duration-200 group-hover:scale-95">
-                                IMG
-                            </span>
-                            <span className="absolute inset-0 flex items-center justify-center bg-background/85 text-foreground opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                                {sidebarCollapsed() ? (
-                                    <ChevronRight className="h-5 w-5" />
-                                ) : (
-                                    <ChevronLeft className="h-5 w-5" />
-                                )}
-                            </span>
-                        </button>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <ThemeToggle />
-                        <Button
-                            onClick={() => logout()}
-                            variant="outline"
-                            size="sm"
-                            className="flex items-center gap-2"
-                        >
-                            <LogOut className="h-4 w-4" />
-                            <span className="hidden sm:inline">Logout</span>
-                        </Button>
-                    </div>
-                </header>
-
-                {/* Chat Container */}
-                <div className="flex-1 flex flex-col p-4 min-h-0 gap-4">
-                    {/* Messages Area */}
-                    <div className="flex-1 rounded-lg bg-card shadow-sm border border-border flex flex-col min-h-0 overflow-hidden">
-                        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                            <Show
-                                when={selectedConversation()}
-                                fallback={
-                                    <div className="h-full flex items-center justify-center">
-                                        <div className="text-center">
-                                            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-lg border border-dashed border-border bg-muted/40 text-sm font-medium text-muted-foreground">
-                                                HEADER
-                                            </div>
-                                            <p className="text-2xl font-semibold text-foreground mb-2">
-                                                Placeholder Title
-                                            </p>
-                                            <p className="text-muted-foreground">
-                                                Placeholder subtitle for the empty chat state
-                                            </p>
-                                        </div>
-                                    </div>
-                                }
-                            >
-                                {(conversation) => (
-                                    <>
-                                        <Show
-                                            when={conversation().messages.length === 0}
-                                            fallback={
-                                                <div className="space-y-4">
-                                                    <For each={conversation().messages}>
-                                                        {(message) => (
-                                                            <div className="flex flex-col gap-3">
-                                                                <Show when={message.user_message}>
-                                                                    <div className="flex justify-end">
-                                                                        <div className="from-primary to-primary/80 bg-gradient-to-r rounded-2xl px-4 py-2 max-w-xs sm:max-w-md lg:max-w-lg break-words text-primary-foreground shadow-sm">
-                                                                            {message.user_message}
-                                                                        </div>
-                                                                    </div>
-                                                                </Show>
-                                                                <Show when={message.bot_response}>
-                                                                    <div className="flex justify-start">
-                                                                        <div className="bg-muted rounded-2xl px-4 py-3 max-w-xs sm:max-w-md lg:max-w-lg break-words shadow-sm">
-                                                                            <MarkdownContent
-                                                                                content={
-                                                                                    message.bot_response ||
-                                                                                    ""
-                                                                                }
-                                                                            />
-                                                                        </div>
-                                                                    </div>
-                                                                </Show>
-                                                            </div>
-                                                        )}
-                                                    </For>
-                                                </div>
-                                            }
-                                        >
-                                            <div className="h-full flex items-center justify-center">
-                                                <p className="text-muted-foreground text-lg">
-                                                    Start the conversation
-                                                </p>
-                                            </div>
-                                        </Show>
-
-                                        <Show when={streamingMessage()}>
-                                            <div className="flex justify-start">
-                                                <div className="bg-muted rounded-2xl px-4 py-3 max-w-xs sm:max-w-md lg:max-w-lg break-words shadow-sm animate-pulse">
-                                                    <MarkdownContent content={streamingMessage()} />
-                                                </div>
-                                            </div>
-                                        </Show>
-
-                                        <Show
-                                            when={
-                                                (loading() || isMutationPending()) &&
-                                                !streamingMessage()
-                                            }
-                                        >
-                                            <div className="flex justify-start">
-                                                <div className="flex items-center gap-2 text-muted-foreground">
-                                                    <Loader className="animate-spin h-5 w-5" />
-                                                    <span>Generating response...</span>
-                                                </div>
-                                            </div>
-                                        </Show>
-                                        <div ref={chatEndRef} />
-                                    </>
-                                )}
-                            </Show>
+            <div className="flex h-[100dvh] min-w-0 flex-1 flex-col">
+                <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-background/90 px-4 backdrop-blur sm:px-6">
+                    <div className="flex min-w-0 items-center gap-3">
+                        <div className="min-w-0">
+                            <h1 className="truncate text-sm font-medium sm:text-base">
+                                {conversationTitle()}
+                            </h1>
+                            <p className="text-xs text-muted-foreground">
+                                {selectedConversation() ? "Conversation" : "New conversation"}
+                            </p>
                         </div>
                     </div>
+                    <ThemeToggle />
+                </header>
 
-                    {/* Input Area */}
-                    <form onSubmit={handleSendMessage} className="flex gap-3 flex-shrink-0">
+                <main className="flex min-h-0 flex-1 flex-col">
+                    <Show
+                        when={selectedConversation()}
+                        fallback={<div className="min-h-0 flex-1 overflow-y-auto" />}
+                    >
+                        {(conversation) => (
+                            <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+                                <div className="flex min-h-full flex-col space-y-4">
+                                    <Show
+                                        when={conversation().messages.length === 0}
+                                        fallback={
+                                            <div className="space-y-4">
+                                                <For each={conversation().messages}>
+                                                    {(message) => (
+                                                        <div className="flex flex-col gap-3">
+                                                            <Show when={message.user_message}>
+                                                                <div className="flex justify-end">
+                                                                    <div className="from-primary to-primary/80 bg-gradient-to-r rounded-2xl px-4 py-2 max-w-xs sm:max-w-md lg:max-w-lg break-words text-primary-foreground shadow-sm">
+                                                                        {message.user_message}
+                                                                    </div>
+                                                                </div>
+                                                            </Show>
+                                                            <Show when={message.bot_response}>
+                                                                <div className="flex justify-start">
+                                                                    <div className="bg-muted rounded-2xl px-4 py-3 max-w-xs sm:max-w-md lg:max-w-lg break-words shadow-sm">
+                                                                        <MarkdownContent
+                                                                            content={
+                                                                                message.bot_response ||
+                                                                                ""
+                                                                            }
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                            </Show>
+                                                        </div>
+                                                    )}
+                                                </For>
+                                            </div>
+                                        }
+                                    >
+                                        <div className="flex flex-1 items-center justify-center">
+                                            <div className="text-center text-muted-foreground">
+                                                <Bot className="mx-auto mb-3 h-8 w-8" />
+                                                <p className="text-sm">Send a message to begin.</p>
+                                            </div>
+                                        </div>
+                                    </Show>
+
+                                    <Show when={streamingMessage()}>
+                                        <div className="flex justify-start">
+                                            <div className="bg-muted rounded-2xl px-4 py-3 max-w-xs sm:max-w-md lg:max-w-lg break-words shadow-sm animate-pulse">
+                                                <MarkdownContent content={streamingMessage()} />
+                                            </div>
+                                        </div>
+                                    </Show>
+
+                                    <Show
+                                        when={
+                                            (loading() || isMutationPending()) &&
+                                            !streamingMessage()
+                                        }
+                                    >
+                                        <div className="flex justify-start">
+                                            <div className="flex items-center gap-2 text-muted-foreground">
+                                                <Loader className="animate-spin h-5 w-5" />
+                                                <span>Generating response...</span>
+                                            </div>
+                                        </div>
+                                    </Show>
+                                    <div ref={chatEndRef} />
+                                </div>
+                            </div>
+                        )}
+                    </Show>
+
+                    <form
+                        onSubmit={handleSendMessage}
+                        className="flex shrink-0 gap-2 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:gap-3 sm:p-4"
+                    >
                         <Input
                             type="text"
                             value={prompt()}
                             onInput={(e) => setPrompt(e.currentTarget.value)}
-                            placeholder="Share your thoughts..."
+                            placeholder="Message MeshMind"
                             disabled={loading() || isMutationPending()}
-                            className="flex-1 rounded-full px-6"
+                            className="h-11 flex-1 rounded-xl px-4"
                             autoFocus
                         />
                         <Button
                             type="submit"
                             disabled={loading() || isMutationPending() || !prompt().trim()}
-                            size="lg"
-                            className="rounded-full px-6 gap-2"
+                            size="icon"
+                            className="h-11 w-11 shrink-0 rounded-xl"
+                            aria-label="Send message"
                         >
                             <Show
                                 when={loading() || isMutationPending()}
@@ -268,10 +360,9 @@ function Dashboard() {
                             >
                                 <Loader className="animate-spin h-5 w-5" />
                             </Show>
-                            <span className="hidden sm:inline">Send</span>
                         </Button>
                     </form>
-                </div>
+                </main>
             </div>
         </div>
     )

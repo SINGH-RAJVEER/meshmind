@@ -1,7 +1,8 @@
 import {
     boolean,
-    customType,
+    halfvec,
     index,
+    integer,
     pgTable,
     text,
     timestamp,
@@ -9,20 +10,6 @@ import {
     uuid,
     varchar,
 } from "drizzle-orm/pg-core"
-
-const vector = customType<{
-    data: number[]
-    driverData: string
-    config: { dimensions: number }
-    configRequired: true
-}>({
-    dataType(config) {
-        return `vector(${config.dimensions})`
-    },
-    toDriver(value: number[]) {
-        return `[${value.join(",")}]`
-    },
-})
 
 // Users table (compatible with BetterAuth)
 export const users = pgTable(
@@ -122,10 +109,17 @@ export const conversations = pgTable(
         userId: uuid("user_id")
             .notNull()
             .references(() => users.id, { onDelete: "cascade" }),
+        summary: text("summary"),
+        compactedMessageCount: integer("compacted_message_count").notNull().default(0),
+        compactedThroughMessageId: uuid("compacted_through_message_id"),
+        compactionCount: integer("compaction_count").notNull().default(0),
+        summaryUpdatedAt: timestamp("summary_updated_at", { withTimezone: true }),
         createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+        updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
     },
     (table) => ({
         userIdIdx: index("conversations_user_id_idx").on(table.userId),
+        updatedAtIdx: index("conversations_updated_at_idx").on(table.updatedAt),
     })
 )
 
@@ -171,7 +165,8 @@ export const messageEmbeddings = pgTable(
             .references(() => users.id, { onDelete: "cascade" }),
         content: text("content").notNull(),
         isUserMessage: boolean("is_user_message").notNull().default(true),
-        embedding: vector("embedding", { dimensions: 768 }).notNull(),
+        embeddingModel: varchar("embedding_model", { length: 255 }).notNull(),
+        embedding: halfvec("embedding", { dimensions: 2048 }).notNull(),
         createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     },
     (table) => ({
@@ -185,6 +180,10 @@ export const messageEmbeddings = pgTable(
             table.userId,
             table.conversationId
         ),
+        embeddingModelIdx: index("message_embeddings_model_idx").on(table.embeddingModel),
+        embeddingHnswIdx: index("message_embeddings_embedding_hnsw_idx")
+            .using("hnsw", table.embedding.op("halfvec_cosine_ops"))
+            .with({ m: 16, ef_construction: 64 }),
         createdAtIdx: index("message_embeddings_created_at_idx").on(table.createdAt),
     })
 )

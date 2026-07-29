@@ -48,4 +48,4 @@ const TooltipContent = (props: TooltipContentProps & { children?: JSX.Element })
     )
 }
 
-export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider }
+export { TooltipTrigger, TooltipContent, TooltipProvider }

@@ -1,69 +1,72 @@
 set shell := ["bash", "-lc"]
-set dotenv-load := true
-set export := true
+set dotenv-load
+set export
 
 alias i := install
 alias tc := type-check
 
 @default:
-  just --list
+    just --list
 
 install:
-  bun install
+    bun install
 
 dev:
     devenv up
 
 build:
-  bun run build
+    bun run build
 
 lint:
-  bun run lint
+    bun run lint
 
 format:
-  bun run format
+    bun run format
 
 type-check:
-  bun run type-check
+    bun run type-check
 
 clean:
-  bun run clean
+    bun run clean
 
 api-dev:
-  cd apps/api && bun run dev
+    cd apps/api && bun run dev
 
 api-build:
-  cd apps/api && bun run build
+    cd apps/api && bun run build
 
 api-start:
-  cd apps/api && bun run start
+    cd apps/api && bun run start
 
 web-dev:
-  cd apps/web && bun run dev
+    cd apps/web && bun run dev
 
 web-build:
-  cd apps/web && bun run build
+    cd apps/web && bun run build
 
 web-preview:
-  cd apps/web && bun run preview
+    cd apps/web && bun run preview
 
 types-build:
-  cd packages/types && bun run build
+    cd packages/types && bun run build
 
 types-dev:
-  cd packages/types && bun run dev
+    cd packages/types && bun run dev
 
 db-build:
-  cd packages/database && bun run build
+    cd packages/database && bun run build
 
 db-dev:
-  cd packages/database && bun run dev
+    cd packages/database && bun run dev
 
 db-generate:
-  bun run --filter=@meshmind/database db:generate
+    bun run --filter=@meshmind/database db:generate
+
+db-migrate:
+    bun run --filter=@meshmind/database db:migrate
 
 db-push:
-  bun run --filter=@meshmind/database db:push
+    bun run --filter=@meshmind/database db:push
 
 db-studio:
-  bun run --filter=@meshmind/database db:studio
+    bun run --filter=@meshmind/database db:studio

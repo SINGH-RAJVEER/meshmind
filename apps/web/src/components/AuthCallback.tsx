@@ -16,8 +16,8 @@ function AuthCallback() {
 
     onMount(() => {
         const handleCallback = async () => {
-            if (searchParams.error) {
-                toast.error(`Authentication failed: ${searchParams.error}`)
+            if (searchParams["error"]) {
+                toast.error(`Authentication failed: ${searchParams["error"]}`)
                 navigate("/login")
                 return
             }

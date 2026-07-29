@@ -1,7 +1,7 @@
 import { type JSX, splitProps } from "solid-js"
 import { cn } from "./utils"
 
-export interface SeparatorProps extends JSX.HTMLAttributes<HTMLDivElement> {
+export interface SeparatorProps extends JSX.HTMLAttributes<HTMLHRElement> {
     orientation?: "horizontal" | "vertical"
     decorative?: boolean
 }

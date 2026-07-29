@@ -6,6 +6,7 @@ import { logger } from "hono/logger"
 import { ALLOWED_FRONTEND_ORIGINS, isAllowedFrontendOrigin } from "./config"
 import { authRouter } from "./routes/auth"
 import { chatbotRouter } from "./routes/chat"
+import { resolveOpenRouterModel } from "./utils/openRouterManager"
 
 const app = new Hono()
 const PORT = parseInt(process.env["PORT"] || "8000", 10)
@@ -34,18 +35,24 @@ app.get("/", (c) => {
 app.get("/health", async (c) => {
     const pgStatus = await healthCheck()
 
-    return c.json({
-        status: pgStatus.ok ? "healthy" : "degraded",
-        services: {
-            postgresql: pgStatus.ok ? "connected" : "disconnected",
+    return c.json(
+        {
+            status: pgStatus.ok ? "healthy" : "degraded",
+            services: {
+                postgresql: pgStatus.ok ? "connected" : "disconnected",
+                ...(pgStatus.postgresVersion ? { postgresVersion: pgStatus.postgresVersion } : {}),
+                ...(pgStatus.vectorVersion ? { pgvectorVersion: pgStatus.vectorVersion } : {}),
+            },
+            ...(pgStatus.error ? { databaseError: pgStatus.error } : {}),
+            timestamp: new Date().toISOString(),
         },
-        ...(pgStatus.error ? { databaseError: pgStatus.error } : {}),
-        timestamp: new Date().toISOString(),
-    })
+        pgStatus.ok ? 200 : 503
+    )
 })
 
-const effectiveLlmModel = process.env["LLM_MODEL"] || "gpt-3.5-turbo"
-const effectiveEmbeddingModel = process.env["LLM_EMBEDDING_MODEL"] || "text-embedding-004"
+const effectiveLlmModel = resolveOpenRouterModel()
+const effectiveEmbeddingModel =
+    process.env["OPENROUTER_EMBEDDING_MODEL"] || "nvidia/nemotron-3-embed-1b:free"
 
 serve(
     {
@@ -55,7 +62,7 @@ serve(
     async (info) => {
         console.log(`API running on port ${info.port}`)
         console.log(`Allowed frontend origins: ${ALLOWED_FRONTEND_ORIGINS.join(", ")}`)
-        console.log(`LLM Model: ${effectiveLlmModel}`)
+        console.log(`OpenRouter Model: ${effectiveLlmModel}`)
         console.log(`Embedding Model: ${effectiveEmbeddingModel}`)
 
         const pgStatus = await healthCheck()

@@ -16,10 +16,33 @@ export const queryClient = postgres({
 
 export const db = drizzle(queryClient, { schema })
 
-export async function healthCheck(): Promise<{ ok: boolean; error?: string }> {
+export async function healthCheck(): Promise<{
+    ok: boolean
+    postgresVersion?: string
+    vectorVersion?: string
+    error?: string
+}> {
     try {
-        await queryClient`SELECT 1`
-        return { ok: true }
+        const [status] = await queryClient<
+            { postgres_version: string; vector_version: string | null }[]
+        >`
+            SELECT
+                current_setting('server_version') AS postgres_version,
+                (SELECT extversion FROM pg_extension WHERE extname = 'vector') AS vector_version
+        `
+
+        if (!status?.postgres_version.startsWith("18.")) {
+            throw new Error(`PostgreSQL 18 is required; connected to ${status?.postgres_version}`)
+        }
+        if (!status.vector_version) {
+            throw new Error("The pgvector extension is not installed")
+        }
+
+        return {
+            ok: true,
+            postgresVersion: status.postgres_version,
+            vectorVersion: status.vector_version,
+        }
     } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error"
         return { ok: false, error: message }
