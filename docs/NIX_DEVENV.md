@@ -10,12 +10,12 @@ just dev
 
 This runs `devenv up` and starts:
 
-- PostgreSQL 16 with pgvector on `localhost:5432`
-- Drizzle schema sync through `@meshmind/database db:push`
+- PostgreSQL 18 with pgvector on `localhost:5432`
+- Versioned Drizzle migrations through `@meshmind/database db:migrate`
 - API on `http://localhost:8000`
 - Web app on `http://localhost:5173`
 
-PostgreSQL data is stored under `.devenv` and is ignored by git.
+PostgreSQL 18 data is stored under `.devenv/state/postgres-18` and is ignored by git. The version-specific path prevents PostgreSQL 18 from opening an incompatible PostgreSQL 16 data directory. Existing PostgreSQL 16 data under `.devenv/state/postgres` is preserved for manual export or removal.
 
 ## Environment
 
@@ -33,7 +33,7 @@ FRONTEND_URL=http://localhost:5173
 VITE_API_URL=http://localhost:8000
 ```
 
-Keep OAuth and LLM provider secrets in the root `.env` file. The process manager and Bun scripts load it at runtime when it exists.
+Keep OAuth and OpenRouter secrets in the root `.env` file. Devenv loads it for every managed process, including the API and web app.
 
 ## Commands
 
@@ -44,6 +44,7 @@ devenv shell
 bun install
 bun run type-check
 bun run build
+just db-migrate
 ```
 
 The `just dev` command is the full dev preview entrypoint.

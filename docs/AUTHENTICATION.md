@@ -61,7 +61,7 @@ Auth table primary keys are UUIDs. Better Auth is configured to generate UUID id
 1. Apply the schema:
 
 ```bash
-bun run --filter=@meshmind/database db:push
+bun run --filter=@meshmind/database db:migrate
 ```
 
 1. Start the API:

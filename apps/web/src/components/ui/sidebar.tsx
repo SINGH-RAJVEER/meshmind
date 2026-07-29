@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js"
+import { type JSX, splitProps } from "solid-js"
 import { cn } from "./utils"
 
 export interface SidebarProps extends JSX.HTMLAttributes<HTMLElement> {
@@ -7,26 +7,18 @@ export interface SidebarProps extends JSX.HTMLAttributes<HTMLElement> {
 }
 
 export const Sidebar = (props: SidebarProps) => {
+    const [split, rest] = splitProps(props, ["class", "children", "collapsed", "onCollapse"])
+
     return (
         <aside
             className={cn(
-                "h-full bg-card border-r flex flex-col transition-all duration-300 ease-in-out",
-                props.collapsed ? "w-16" : "w-64",
-                props.class
+                "flex h-full shrink-0 flex-col overflow-hidden border-r bg-sidebar text-sidebar-foreground transition-[width] duration-300 ease-in-out",
+                split.collapsed ? "w-16" : "w-72",
+                split.class
             )}
-            style={{
-                minWidth: props.collapsed ? "4rem" : "16rem",
-                maxWidth: props.collapsed ? "4rem" : "16rem",
-            }}
+            {...rest}
         >
-            <div
-                className={cn(
-                    "flex-1 overflow-y-auto transition-opacity duration-200 pt-4",
-                    props.collapsed ? "opacity-0 pointer-events-none" : "opacity-100"
-                )}
-            >
-                {props.children}
-            </div>
+            {split.children}
         </aside>
     )
 }

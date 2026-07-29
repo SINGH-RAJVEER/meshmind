@@ -40,6 +40,8 @@ export const useSendMessageStream = () => {
         setLoading(true)
         let fullResponse = ""
         let finalConversationId = conversationId
+        let compactionSummary: string | undefined
+        let summaryUpdatedAt: string | undefined
 
         try {
             for await (const event of sendMessageStream({
@@ -47,10 +49,23 @@ export const useSendMessageStream = () => {
                 conversationId,
             })) {
                 if (event.type === "text") {
-                    fullResponse += event.content
-                    onChunk(event.content)
+                    const content = event.content || ""
+                    fullResponse += content
+                    onChunk(content)
                 } else if (event.type === "metadata") {
                     finalConversationId = event.conversation_id
+                } else if (event.type === "compaction") {
+                    compactionSummary = event.summary
+                    summaryUpdatedAt = event.summary_updated_at
+
+                    const currentConversationId = finalConversationId ?? selectedConversation()?.id
+                    if (currentConversationId) {
+                        updateConversation(currentConversationId, (conversation) => ({
+                            ...conversation,
+                            summary: event.summary,
+                            summaryUpdatedAt: event.summary_updated_at,
+                        }))
+                    }
                 } else if (event.type === "error") {
                     throw new Error(event.content)
                 }
@@ -60,20 +75,25 @@ export const useSendMessageStream = () => {
 
             const selected = selectedConversation()
             const userMessage = {
-                id: Date.now(),
+                id: crypto.randomUUID(),
                 user_message: message,
-                type: "user",
+                type: "user" as const,
             }
             const botMessage = {
-                id: Date.now() + 1,
+                id: crypto.randomUUID(),
                 bot_response: fullResponse,
-                type: "ai",
+                type: "ai" as const,
             }
 
             if (!selected) {
+                if (!finalConversationId) {
+                    throw new Error("Chat response did not include a conversation ID")
+                }
                 const newConversation = {
                     id: finalConversationId,
                     messages: [userMessage, botMessage],
+                    summary: compactionSummary,
+                    summaryUpdatedAt,
                 }
                 setSelectedConversation(newConversation)
             } else {

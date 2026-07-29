@@ -1,4 +1,4 @@
-import { createSignal, For } from "solid-js"
+import { createSignal, For, type Setter } from "solid-js"
 
 interface Toast {
     id: string
@@ -10,7 +10,7 @@ let toastId = 0
 
 export const toastContext = {
     toasts: [] as Toast[],
-    setToasts: (_t: Toast[]) => {},
+    setToasts: ((_t: Toast[]) => {}) as Setter<Toast[]>,
 }
 
 const Toast = () => {

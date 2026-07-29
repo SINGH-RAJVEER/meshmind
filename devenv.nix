@@ -1,7 +1,7 @@
-{ pkgs, lib, ... }:
+{ pkgs, lib, config, ... }:
 
 let
-  postgresPackage = pkgs.postgresql_16.withPackages (extensions: [
+  postgresPackage = pkgs.postgresql_18.withPackages (extensions: [
     extensions.pgvector
   ]);
 
@@ -9,6 +9,8 @@ let
     "POSTGRES_HOST=localhost POSTGRES_PORT=5432 POSTGRES_DB=meshmind POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres";
 in
 {
+  dotenv.enable = true;
+
   packages = with pkgs; [
     bun
     nodejs_24
@@ -21,6 +23,7 @@ in
   ];
 
   env = {
+    PGDATA = lib.mkForce (config.env.DEVENV_STATE + "/postgres-18");
     POSTGRES_HOST = lib.mkDefault "localhost";
     POSTGRES_PORT = lib.mkDefault "5432";
     POSTGRES_DB = lib.mkDefault "meshmind";
@@ -57,8 +60,8 @@ in
   };
 
   processes = {
-    db-push = {
-      exec = "${localDatabaseEnv} bun run --filter=@meshmind/database db:push";
+    db-migrate = {
+      exec = "${localDatabaseEnv} bun run --filter=@meshmind/database db:migrate";
 
       process-compose = {
         depends_on.postgres.condition = "process_healthy";
@@ -69,7 +72,7 @@ in
       exec = "${localDatabaseEnv} PORT=8000 BACKEND_URL=http://localhost:8000 FRONTEND_URL=http://localhost:5173 bun run --filter=@meshmind/api dev";
 
       process-compose = {
-        depends_on."db-push".condition = "process_completed_successfully";
+        depends_on."db-migrate".condition = "process_completed_successfully";
 
         readiness_probe = {
           http_get = {

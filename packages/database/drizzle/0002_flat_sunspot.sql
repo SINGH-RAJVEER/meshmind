@@ -1,0 +1,1 @@
+ALTER TABLE "conversations" ADD COLUMN "compacted_through_message_id" uuid;

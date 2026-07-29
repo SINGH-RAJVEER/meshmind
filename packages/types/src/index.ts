@@ -42,6 +42,8 @@ export interface Conversation {
     id: string
     messages: Message[]
     timestamp?: string | Date
+    summary?: string
+    summaryUpdatedAt?: string
 }
 
 // Chat API types

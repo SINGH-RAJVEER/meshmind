@@ -1,5 +1,5 @@
 import { db, messageEmbeddings, queryClient } from "@meshmind/database"
-import { desc, eq, sql } from "drizzle-orm"
+import { sql } from "drizzle-orm"
 import embeddingsManager from "../utils/embeddingsManager"
 import type { MessageEmbeddingRow } from "./types"
 
@@ -10,6 +10,7 @@ export interface MessageEmbeddingData {
     userId: string
     content: string
     isUserMessage: boolean
+    embeddingModel?: string
     embedding?: number[]
     createdAt?: Date
     similarity?: number
@@ -17,17 +18,9 @@ export interface MessageEmbeddingData {
 
 class MessageEmbeddingsService {
     private toVectorLiteral(values: number[]): string {
-        return `[${values
-            .map((value) => {
-                const normalized = Number(value)
-                return Number.isFinite(normalized) ? normalized.toString() : "0"
-            })
-            .join(",")}]`
+        return `[${values.join(",")}]`
     }
 
-    /**
-     * Store embeddings for a user message and bot response
-     */
     async storeMessageEmbeddings(
         messageId: string,
         conversationId: string,
@@ -35,161 +28,97 @@ class MessageEmbeddingsService {
         userMessage: string,
         botResponse: string
     ): Promise<void> {
-        try {
-            // Prepare texts for embedding
-            const preparedUserMessage = embeddingsManager.prepareTextForEmbedding(userMessage)
-            const preparedBotResponse = embeddingsManager.prepareTextForEmbedding(botResponse)
+        const preparedUserMessage = embeddingsManager.prepareTextForEmbedding(userMessage)
+        const preparedBotResponse = embeddingsManager.prepareTextForEmbedding(botResponse)
+        const [userEmbedding, botEmbedding] = await embeddingsManager.generateEmbeddings([
+            preparedUserMessage,
+            preparedBotResponse,
+        ])
 
-            // Generate embeddings in batch for efficiency
-            const embeddings = await embeddingsManager.generateEmbeddings([
-                preparedUserMessage,
-                preparedBotResponse,
-            ])
-
-            const [userEmbedding, botEmbedding] = embeddings
-
-            // Store both embeddings in the database
-            await this.insertEmbedding({
-                messageId,
-                conversationId,
-                userId,
-                content: preparedUserMessage,
-                isUserMessage: true,
-                embedding: userEmbedding,
-            })
-
-            await this.insertEmbedding({
-                messageId,
-                conversationId,
-                userId,
-                content: preparedBotResponse,
-                isUserMessage: false,
-                embedding: botEmbedding,
-            })
-        } catch (err) {
-            console.error("Error storing message embeddings:", err)
-            // Don't throw - embeddings are supplementary, shouldn't break main flow
-        }
-    }
-
-    /**
-     * Insert a single embedding into the database
-     */
-    private async insertEmbedding(data: MessageEmbeddingData): Promise<void> {
-        if (!data.embedding) {
-            throw new Error("Embedding data is required")
+        if (!userEmbedding || !botEmbedding) {
+            throw new Error("Embedding provider returned an incomplete batch")
         }
 
+        const embeddingModel = embeddingsManager.getEmbeddingModel()
         await db
             .insert(messageEmbeddings)
-            .values({
-                messageId: data.messageId,
-                conversationId: data.conversationId,
-                userId: data.userId,
-                content: data.content,
-                isUserMessage: data.isUserMessage,
-                embedding: data.embedding,
-            })
+            .values([
+                {
+                    messageId,
+                    conversationId,
+                    userId,
+                    content: preparedUserMessage,
+                    isUserMessage: true,
+                    embeddingModel,
+                    embedding: userEmbedding,
+                },
+                {
+                    messageId,
+                    conversationId,
+                    userId,
+                    content: preparedBotResponse,
+                    isUserMessage: false,
+                    embeddingModel,
+                    embedding: botEmbedding,
+                },
+            ])
             .onConflictDoUpdate({
                 target: [messageEmbeddings.messageId, messageEmbeddings.isUserMessage],
                 set: {
-                    content: data.content,
-                    embedding: data.embedding,
-                    createdAt: sql`CURRENT_TIMESTAMP`,
+                    content: sql`excluded.content`,
+                    embeddingModel: sql`excluded.embedding_model`,
+                    embedding: sql`excluded.embedding`,
                 },
             })
     }
 
-    /**
-     * Find similar messages in a conversation using vector similarity search
-     * This retrieves contextually relevant messages based on semantic meaning
-     */
     async findSimilarMessagesInConversation(
+        userId: string,
         conversationId: string,
         queryText: string,
         limit: number = 10,
-        similarityThreshold: number = 0.5
-    ): Promise<MessageEmbeddingData[]> {
-        try {
-            // Generate embedding for the query
-            const preparedQuery = embeddingsManager.prepareTextForEmbedding(queryText)
-            const queryEmbedding = await embeddingsManager.generateEmbedding(preparedQuery)
-
-            // Search for similar messages using cosine similarity
-            // 1 - (embedding <=> query) gives us cosine similarity (1 = identical, 0 = orthogonal)
-            const query = `
-        SELECT 
-          id,
-          message_id,
-          conversation_id,
-          user_id,
-          content,
-          is_user_message,
-          created_at,
-          1 - (embedding <=> $1::vector) AS similarity
-        FROM message_embeddings
-        WHERE conversation_id = $2
-          AND 1 - (embedding <=> $1::vector) > $3
-        ORDER BY embedding <=> $1::vector
-        LIMIT $4
-      `
-
-            const result = (await queryClient.unsafe(query, [
-                this.toVectorLiteral(queryEmbedding),
-                conversationId,
-                similarityThreshold,
-                limit,
-            ])) as MessageEmbeddingRow[]
-
-            return result.map((row) => ({
-                id: row.id,
-                messageId: row.message_id,
-                conversationId: row.conversation_id,
-                userId: row.user_id,
-                content: row.content,
-                isUserMessage: row.is_user_message,
-                createdAt: row.created_at,
-                similarity: row.similarity ? Number(row.similarity) : undefined,
-            }))
-        } catch (err) {
-            console.error("Error finding similar messages:", err)
-            return [] // Return empty array on error to not break the flow
-        }
-    }
-
-    /**
-     * Find similar messages across all user's conversations
-     */
-    async findSimilarMessagesForUser(
-        userId: string,
-        queryText: string,
-        limit: number = 10,
-        similarityThreshold: number = 0.5
+        similarityThreshold: number = 0.55
     ): Promise<MessageEmbeddingData[]> {
         try {
             const preparedQuery = embeddingsManager.prepareTextForEmbedding(queryText)
             const queryEmbedding = await embeddingsManager.generateEmbedding(preparedQuery)
-
             const query = `
-        SELECT 
-          id,
-          message_id,
-          conversation_id,
-          user_id,
-          content,
-          is_user_message,
-          created_at,
-          1 - (embedding <=> $1::vector) AS similarity
-        FROM message_embeddings
-        WHERE user_id = $2
-          AND 1 - (embedding <=> $1::vector) > $3
-        ORDER BY embedding <=> $1::vector
-        LIMIT $4
-      `
-
+                WITH candidates AS MATERIALIZED (
+                    SELECT
+                        id,
+                        message_id,
+                        conversation_id,
+                        user_id,
+                        content,
+                        is_user_message,
+                        embedding_model,
+                        embedding,
+                        created_at
+                    FROM message_embeddings
+                    WHERE user_id = $2
+                        AND conversation_id = $3
+                        AND embedding_model = $4
+                )
+                SELECT
+                    id,
+                    message_id,
+                    conversation_id,
+                    user_id,
+                    content,
+                    is_user_message,
+                    embedding_model,
+                    created_at,
+                    1 - (embedding <=> $1::halfvec) AS similarity
+                FROM candidates
+                WHERE 1 - (embedding <=> $1::halfvec) > $5
+                ORDER BY embedding <=> $1::halfvec
+                LIMIT $6
+            `
             const result = (await queryClient.unsafe(query, [
                 this.toVectorLiteral(queryEmbedding),
                 userId,
+                conversationId,
+                embeddingsManager.getEmbeddingModel(),
                 similarityThreshold,
                 limit,
             ])) as MessageEmbeddingRow[]
@@ -201,87 +130,17 @@ class MessageEmbeddingsService {
                 userId: row.user_id,
                 content: row.content,
                 isUserMessage: row.is_user_message,
+                embeddingModel: row.embedding_model,
                 createdAt: row.created_at,
-                similarity: row.similarity ? Number(row.similarity) : undefined,
+                similarity:
+                    row.similarity === null || row.similarity === undefined
+                        ? undefined
+                        : Number(row.similarity),
             }))
         } catch (err) {
-            console.error("Error finding similar messages for user:", err)
+            console.warn("Semantic retrieval unavailable; continuing without vector context:", err)
             return []
         }
-    }
-
-    /**
-     * Get conversation context using hybrid approach:
-     * - Recent messages (chronological)
-     * - Relevant messages (semantic similarity)
-     */
-    async getConversationContext(
-        conversationId: string,
-        currentMessage: string,
-        recentLimit: number = 5,
-        similarLimit: number = 5
-    ): Promise<string> {
-        try {
-            // Get recent messages (chronological order)
-            const recentMessages = await db
-                .select({
-                    content: messageEmbeddings.content,
-                    isUserMessage: messageEmbeddings.isUserMessage,
-                    createdAt: messageEmbeddings.createdAt,
-                })
-                .from(messageEmbeddings)
-                .where(eq(messageEmbeddings.conversationId, conversationId))
-                .orderBy(desc(messageEmbeddings.createdAt))
-                .limit(recentLimit)
-
-            // Get semantically similar messages
-            const similarMessages = await this.findSimilarMessagesInConversation(
-                conversationId,
-                currentMessage,
-                similarLimit,
-                0.6 // Higher threshold for better relevance
-            )
-
-            // Combine and format the context
-            const recentContext = recentMessages
-                .reverse()
-                .map((row) => `${row.isUserMessage ? "User" : "Assistant"}: ${row.content}`)
-                .join("\n")
-
-            const similarContext = similarMessages
-                .map((msg) => `${msg.isUserMessage ? "User" : "Assistant"}: ${msg.content}`)
-                .join("\n")
-
-            // Format the combined context
-            let context = ""
-            if (recentContext) {
-                context += `Recent conversation:\n${recentContext}\n\n`
-            }
-            if (similarContext && similarContext !== recentContext) {
-                context += `Relevant past context:\n${similarContext}`
-            }
-
-            return context
-        } catch (err) {
-            console.error("Error getting conversation context:", err)
-            return ""
-        }
-    }
-
-    /**
-     * Delete embeddings for a specific conversation
-     */
-    async deleteConversationEmbeddings(conversationId: string): Promise<void> {
-        await db
-            .delete(messageEmbeddings)
-            .where(eq(messageEmbeddings.conversationId, conversationId))
-    }
-
-    /**
-     * Delete embeddings for a specific message
-     */
-    async deleteMessageEmbeddings(messageId: string): Promise<void> {
-        await db.delete(messageEmbeddings).where(eq(messageEmbeddings.messageId, messageId))
     }
 }
 

@@ -4,9 +4,9 @@ MeshMind is organized as an LLM-agnostic chat platform with a web client, an aut
 
 The repository is a Bun workspace orchestrated by Nx. Root commands such as `bun run build`, `bun run lint`, `bun run type-check`, and `bun run dev` delegate to Nx, which discovers package scripts from `apps/*` and `packages/*` and applies the target dependency rules in `nx.json`.
 
-TypeScript compiler defaults live in the root `tsconfig.json`. App and package TypeScript configs extend it and keep only their local JSX and output settings. The web app keeps its Solid app compiler settings and Vite config include in `apps/web/tsconfig.json`. The shared config owns strictness, path aliases, bundler-style resolution defaults, and additional safety checks such as unchecked indexed access and side-effect import validation.
+TypeScript compiler defaults live in the root `tsconfig.json`. App and package TypeScript configs extend it and keep only their local JSX and output settings. The shared config owns strictness, path aliases, bundler-style resolution defaults, and additional safety checks such as unchecked indexed access and side-effect import validation.
 
-Local dev preview is managed by Nix devenv. `just dev` starts PostgreSQL with pgvector, syncs the Drizzle schema, and runs the API and web app through the processes defined in `devenv.nix`.
+Local dev preview is managed by Nix devenv. `just dev` starts PostgreSQL 18 with pgvector, applies versioned Drizzle migrations, and runs the API and web app through the processes defined in `devenv.nix`.
 
 ## Applications
 
@@ -18,13 +18,17 @@ Local dev preview is managed by Nix devenv. `just dev` starts PostgreSQL with pg
 - `src/routes/chat.ts` - chat streaming, history, and conversation deletion
 - `src/middleware/auth.ts` - authenticated user middleware
 - `src/services/embeddingsService.ts` - pgvector-backed semantic retrieval
-- `src/utils/litellmManager.ts` - OpenAI-compatible chat completion streaming helper
+- `src/services/conversationContextService.ts` - context budgeting, semantic retrieval, and rolling summary compaction
+- `src/scripts/backfillEmbeddings.ts` - idempotent embedding regeneration
+- `src/utils/openRouterManager.ts` - OpenRouter chat completion streaming helper
 - `src/utils/embeddingsManager.ts` - OpenAI-compatible embedding generation helper
 
 ### `apps/web`
 
 - `src/components` - UI screens and reusable primitives
-- `src/components/ui/sidebar.tsx` - branded sidebar header with logo-first expand and collapse affordance
+- `src/components/Login.tsx` - login form with the MeshMind display wordmark
+- `src/components/Dashboard.tsx` - responsive chat shell with independently scrolling messages, a bottom-pinned composer, and conversation summary metadata in the sidebar
+- `src/components/ui/sidebar.tsx` - collapsible sidebar layout primitive with a rail-mounted expansion control
 - `src/hooks` - auth and chat hooks
 - `src/store` - client state
 - `src/api` - frontend API clients
@@ -61,7 +65,7 @@ MeshMind stores all persisted data in PostgreSQL:
 
 - Drizzle indexes are defined in `packages/database/src/schema.ts`
 - `message_embeddings` uses an HNSW index for pgvector similarity search
-- chat history uses relational queries first and semantic similarity when embeddings are available
+- chat context combines persistent summaries, relational recent turns, and ownership-scoped semantic matches
 
 ## Code quality
 
@@ -70,7 +74,10 @@ All packages use Biome for linting and formatting through the root `biome.json`.
 ```bash
 bun run lint
 bun run format
+bun test
 ```
+
+Bun tests cover compaction planning, embedding response validation, system-prompt context isolation, and fragmented SSE parsing.
 
 ## Build and development
 

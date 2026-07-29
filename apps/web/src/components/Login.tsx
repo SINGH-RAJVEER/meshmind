@@ -7,6 +7,7 @@ import ThemeToggle from "./ThemeToggle"
 import { toast } from "./Toast"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
+import { Separator } from "./ui/separator"
 
 const GoogleLogo = () => (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5">
@@ -50,7 +51,7 @@ function Login() {
         }
     }
 
-    const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
+    const GOOGLE_CLIENT_ID = import.meta.env["VITE_GOOGLE_CLIENT_ID"]
 
     if (!GOOGLE_CLIENT_ID) {
         console.warn("VITE_GOOGLE_CLIENT_ID is not set")
@@ -63,13 +64,10 @@ function Login() {
             </div>
 
             <div className="w-full max-w-md space-y-8">
-                {/* Header */}
                 <div className="text-center">
-                    <div className="mb-4 h-12 w-12 mx-auto rounded-lg border border-dashed border-border bg-muted/50" />
-                    <h2 className="text-3xl font-bold text-foreground">
-                        [Login Title Placeholder]
-                    </h2>
-                    <p className="mt-2 text-muted-foreground">[Login subtitle placeholder]</p>
+                    <h1 className="font-wordmark text-5xl font-semibold tracking-[-0.06em] text-foreground">
+                        MeshMind
+                    </h1>
                 </div>
 
                 {/* Email & Password Form */}
@@ -108,16 +106,10 @@ function Login() {
                     </Button>
                 </form>
 
-                {/* Divider */}
-                <div className="relative">
-                    <div className="absolute inset-0 flex items-center">
-                        <div className="w-full border-t border-border"></div>
-                    </div>
-                    <div className="relative flex justify-center text-sm">
-                        <span className="px-2 bg-background text-muted-foreground">
-                            Or continue with
-                        </span>
-                    </div>
+                <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                    <Separator className="flex-1" decorative />
+                    <span>Or continue with</span>
+                    <Separator className="flex-1" decorative />
                 </div>
 
                 {/* OAuth Buttons */}

@@ -1,13 +1,27 @@
 {
-    "version": "7",
-    "dialect": "postgresql",
-    "entries": [
-        {
-            "idx": 0,
-            "version": "7",
-            "when": 1772815146000,
-            "tag": "0000_tiresome_whirlwind",
-            "breakpoints": true
-        }
-    ]
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1772815146000,
+      "tag": "0000_tiresome_whirlwind",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785287826825,
+      "tag": "0001_lumpy_scarlet_spider",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785289244677,
+      "tag": "0002_flat_sunspot",
+      "breakpoints": true
+    }
+  ]
 }

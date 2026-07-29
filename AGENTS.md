@@ -18,6 +18,10 @@ Rules for AI agents in this repository.
 - Always update documentation in `/docs` after updating a feature.
 - Create a new file in `/docs` only for an entirely new feature.
 
+## Version control system
+
+- Jujutsu (jj) is used as the primary vcs in this project
+
 ## Don’ts
 
 - Never use emojis in documentation or messages.

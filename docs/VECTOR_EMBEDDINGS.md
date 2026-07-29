@@ -1,86 +1,73 @@
 # Vector Embeddings
 
-MeshMind stores semantic embeddings in PostgreSQL using pgvector. There is no secondary document database.
+MeshMind stores semantic embeddings in PostgreSQL 18 using pgvector. There is no secondary document database.
 
 ## Storage model
 
-Relational chat data:
+Each `messages` row stores one complete user and assistant turn. Each turn can have two rows in `message_embeddings`:
 
-- `conversations`
-- `messages`
+- one embedding for the user message
+- one embedding for the assistant response
 
-Semantic retrieval data:
+Each embedding row stores the owning user and conversation, normalized source content, role, embedding model ID, and vector. Retrieval always filters by authenticated user, conversation, and active embedding model before ranking by cosine distance.
 
-- `message_embeddings`
-
-Each `messages` row can have two embedding rows:
-
-- one for the user message
-- one for the assistant reply
-
-## Environment
+## Model and dimensions
 
 ```env
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_DB=meshmind
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=your_password
-
-LLM_EMBEDDING_MODEL=text-embedding-004
-GEMINI_API_KEY=your_gemini_key
+OPENROUTER_EMBEDDING_MODEL=nvidia/nemotron-3-embed-1b:free
+OPENROUTER_EMBEDDING_DIMENSIONS=2048
 ```
 
-For local development, keep `POSTGRES_HOST=localhost`.
+OpenRouter lists this model as free and text-to-embeddings. Its endpoint requires 2,048-dimensional float output. MeshMind validates every response count, dimension, and numeric value before storage.
 
-If `LLM_BASE_URL` is omitted, the API uses `http://localhost:4000/v1`.
+The database column is `halfvec(2048)`. Regular pgvector HNSW indexes support up to 2,000 `vector` dimensions, while `halfvec` supports this model's full 2,048-dimensional output with the `halfvec_cosine_ops` operator class.
 
-## Table shape
+## Indexes
 
-`message_embeddings` contains:
+`message_embeddings` has:
 
-- `message_id`
-- `conversation_id`
-- `user_id`
-- `content`
-- `is_user_message`
-- `embedding vector(768)`
-- `created_at`
+- a unique index on `message_id + is_user_message`
+- ownership and model lookup indexes
+- an HNSW cosine index over `embedding`
 
-It also has:
+## Retrieval flow
 
-- a unique constraint on `message_id + is_user_message`
-- lookup indexes for `user_id`, `conversation_id`, and `created_at`
-- an HNSW cosine index for vector search
+1. Load the conversation's persistent semantic summary.
+2. Load uncompacted complete turns from the relational `messages` table.
+3. Embed the current prompt with the active OpenRouter embedding model.
+4. Search pgvector for user-scoped, conversation-scoped, model-matched semantic results.
+5. Exclude matches already present in recent context.
+6. Send summary, recent turns, and relevant earlier details as delimited untrusted context.
 
-## Query flow
+Vector lookup failure is supplementary and does not prevent chat generation.
 
-1. Store the chat message in `messages`
-2. Generate embeddings for the user and assistant text
-3. Upsert both vectors into `message_embeddings`
-4. On the next prompt, combine:
-   - recent relational message history
-   - semantically similar embedding matches
+## Migrations and backfill
 
-## Behavior
-
-- Embedding writes are asynchronous
-- Vector lookup failure falls back to chronological PostgreSQL history
-- Deleting a conversation cascades through messages and embeddings
-
-## Useful commands
+Apply versioned migrations:
 
 ```bash
-bun run --filter=@meshmind/database db:push
+just db-migrate
 ```
 
-## Manual verification
+Migration `0001` clears old 768-dimensional derived embeddings because vectors from different models and dimensions cannot be converted meaningfully. Raw messages are retained. Regenerate all embeddings with:
+
+```bash
+bun run --filter=@meshmind/api embeddings:backfill
+```
+
+The backfill is idempotent because each message role is upserted.
+
+## Verification
 
 ```sql
-SELECT COUNT(*) FROM message_embeddings;
+SELECT current_setting('server_version');
+SELECT extversion FROM pg_extension WHERE extname = 'vector';
 
-SELECT conversation_id, is_user_message, created_at
+SELECT embedding_model, vector_dims(embedding), count(*)
 FROM message_embeddings
-ORDER BY created_at DESC
-LIMIT 10;
+GROUP BY embedding_model, vector_dims(embedding);
+
+SELECT indexdef
+FROM pg_indexes
+WHERE indexname = 'message_embeddings_embedding_hnsw_idx';
 ```

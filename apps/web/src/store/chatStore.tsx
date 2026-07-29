@@ -9,6 +9,8 @@ export interface Message {
 export interface Conversation {
     id: string
     messages: Message[]
+    summary?: string
+    summaryUpdatedAt?: string
 }
 
 interface ChatContextType {

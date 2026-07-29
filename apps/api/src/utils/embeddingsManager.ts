@@ -1,20 +1,58 @@
 import OpenAI from "openai"
 
+const DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+const DEFAULT_OPENROUTER_EMBEDDING_MODEL = "nvidia/nemotron-3-embed-1b:free"
+const DEFAULT_EMBEDDING_DIMENSIONS = 2048
+const EMBEDDING_REQUEST_TIMEOUT_MS = 15_000
+
 const stripTrailingSlash = (value: string) => value.replace(/\/+$/, "")
 
-const resolveLlmBaseUrl = () => {
-    const configuredValue = process.env["LLM_BASE_URL"]?.trim()
+const resolveOpenRouterBaseUrl = () => {
+    const configuredValue = process.env["OPENROUTER_BASE_URL"]?.trim()
 
     if (configuredValue) {
         return stripTrailingSlash(configuredValue)
     }
 
-    return "http://localhost:4000/v1"
+    return DEFAULT_OPENROUTER_BASE_URL
+}
+
+const resolveOpenRouterHeaders = () => {
+    const siteUrl = process.env["OPENROUTER_SITE_URL"] || process.env["FRONTEND_URL"]
+    const appTitle = process.env["OPENROUTER_APP_TITLE"] || "MeshMind"
+
+    return {
+        ...(siteUrl ? { "HTTP-Referer": siteUrl } : {}),
+        "X-OpenRouter-Title": appTitle,
+        "User-Agent": "meshmind-embeddings/1.0",
+    }
+}
+
+const resolveOpenRouterApiKey = () => {
+    return process.env["OPENROUTER_API_KEY"] || "missing-openrouter-api-key"
+}
+
+const resolveEmbeddingDimensions = () => {
+    const configuredDimensions = process.env["OPENROUTER_EMBEDDING_DIMENSIONS"]
+
+    if (!configuredDimensions) {
+        return DEFAULT_EMBEDDING_DIMENSIONS
+    }
+
+    const dimensions = parseInt(configuredDimensions, 10)
+
+    if (dimensions !== DEFAULT_EMBEDDING_DIMENSIONS) {
+        throw new Error(
+            `OPENROUTER_EMBEDDING_DIMENSIONS must be ${DEFAULT_EMBEDDING_DIMENSIONS} for the configured pgvector schema`
+        )
+    }
+
+    return dimensions
 }
 
 const toErrorMessage = (err: unknown, baseURL: string) => {
     if (err && typeof err === "object" && "status" in err && err.status === 404) {
-        return `Embedding endpoint returned 404. Check LLM_BASE_URL (current: ${baseURL}) and confirm an OpenAI-compatible server with embeddings is running there.`
+        return `OpenRouter embedding endpoint returned 404. Check OPENROUTER_BASE_URL (current: ${baseURL}) and confirm the selected embedding model is available.`
     }
 
     if (err instanceof Error) {
@@ -24,30 +62,55 @@ const toErrorMessage = (err: unknown, baseURL: string) => {
     return "Unknown embeddings error"
 }
 
+export const validateEmbeddingBatch = (
+    embeddings: number[][],
+    expectedCount: number,
+    dimensions: number
+): number[][] => {
+    if (embeddings.length !== expectedCount) {
+        throw new Error(`Expected ${expectedCount} embeddings but received ${embeddings.length}`)
+    }
+
+    for (const embedding of embeddings) {
+        if (embedding.length !== dimensions || embedding.some((value) => !Number.isFinite(value))) {
+            throw new Error(`Embedding response must contain ${dimensions} finite values`)
+        }
+    }
+
+    return embeddings
+}
+
 class EmbeddingsManager {
     private client: OpenAI
     private embeddingModel: string
+    private embeddingDimensions: number
     private baseURL: string
 
-    constructor() {
-        const apiKey = process.env["GEMINI_API_KEY"] || "not-needed"
-        const baseURL = resolveLlmBaseUrl()
+    private validateEmbeddings(embeddings: number[][], expectedCount: number): number[][] {
+        return validateEmbeddingBatch(embeddings, expectedCount, this.embeddingDimensions)
+    }
 
-        this.embeddingModel = process.env["LLM_EMBEDDING_MODEL"] || "text-embedding-004"
+    constructor() {
+        const baseURL = resolveOpenRouterBaseUrl()
+
+        this.embeddingModel =
+            process.env["OPENROUTER_EMBEDDING_MODEL"] || DEFAULT_OPENROUTER_EMBEDDING_MODEL
+        this.embeddingDimensions = resolveEmbeddingDimensions()
 
         this.baseURL = baseURL
 
         this.client = new OpenAI({
-            apiKey,
+            apiKey: resolveOpenRouterApiKey(),
             baseURL,
-            defaultHeaders: {
-                "User-Agent": "meshmind-embeddings/1.0",
-            },
+            defaultHeaders: resolveOpenRouterHeaders(),
+            maxRetries: 1,
+            timeout: EMBEDDING_REQUEST_TIMEOUT_MS,
         })
 
-        console.log(`Embeddings Manager initialized`)
+        console.log("OpenRouter Embeddings Manager initialized")
         console.log(`Base URL: ${baseURL}`)
         console.log(`Embedding Model: ${this.embeddingModel}`)
+        console.log(`Embedding Dimensions: ${this.embeddingDimensions}`)
     }
 
     /**
@@ -59,12 +122,14 @@ class EmbeddingsManager {
             const response = await this.client.embeddings.create({
                 model: this.embeddingModel,
                 input: text,
+                dimensions: this.embeddingDimensions,
+                encoding_format: "float",
             })
 
             const embedding = response.data[0]
 
             if (embedding) {
-                return embedding.embedding
+                return this.validateEmbeddings([embedding.embedding], 1)[0] || []
             }
 
             throw new Error("No embedding data received")
@@ -84,11 +149,16 @@ class EmbeddingsManager {
             const response = await this.client.embeddings.create({
                 model: this.embeddingModel,
                 input: texts,
+                dimensions: this.embeddingDimensions,
+                encoding_format: "float",
             })
 
             if (response.data && response.data.length > 0) {
                 // Sort by index to ensure correct order
-                return response.data.sort((a, b) => a.index - b.index).map((item) => item.embedding)
+                const embeddings = response.data
+                    .sort((a, b) => a.index - b.index)
+                    .map((item) => item.embedding)
+                return this.validateEmbeddings(embeddings, texts.length)
             }
 
             throw new Error("No embedding data received")
@@ -101,7 +171,7 @@ class EmbeddingsManager {
 
     /**
      * Prepare text for embedding by cleaning and truncating if necessary
-     * Gemini text-embedding-004 supports up to ~20,000 tokens
+     * Keep text chunks conservative so embedding providers can process them reliably.
      */
     prepareTextForEmbedding(text: string, maxLength: number = 8000): string {
         // Remove excessive whitespace and newlines
@@ -120,6 +190,10 @@ class EmbeddingsManager {
      */
     getEmbeddingModel(): string {
         return this.embeddingModel
+    }
+
+    getEmbeddingDimensions(): number {
+        return this.embeddingDimensions
     }
 }
 
