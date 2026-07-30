@@ -17,6 +17,8 @@ MeshMind is an LLM-agnostic AI chat application built as a Bun monorepo. It conn
 - `packages/types` - shared TypeScript types
 - `docs` - setup and architecture notes
 
+The web frontend is implemented with React and Vite.
+
 ## Features
 
 - Any Model, One Interface: connect to OpenRouter models through one OpenAI-compatible endpoint.
